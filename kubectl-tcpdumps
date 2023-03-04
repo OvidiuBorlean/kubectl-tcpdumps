@@ -1,0 +1,105 @@
+#!/bin/bash
+
+if [ "$#" -lt 2 ];
+then
+  echo "AKS Nodes Network Capture"
+  echo "Invalid number of arguments"
+  echo "Usage: kubectl netdumps nodeName captureTime(s)"
+  echo "kubectl-netdumps.sh akswin0001 30"
+
+fi
+
+nodeName="$1"
+capTime="$2"
+
+#Checking for existence of SAS Key as environment variable in SAS
+if [[ -z "${SAS}" ]]; then
+  echo "Storage Account Signature not found in environment variable. Please add the required value in SAS, eg. 'SAS=yourKeyUrl'"
+  nodeName="$1"
+  capTime="$2"
+  SAS_key="$3"
+  exit
+else
+cat << EOF > ./tcpdumps.yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    component: tcpdumps
+  name: tcpdumps
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      component: tcpdumps
+      tier: node
+  template:
+    metadata:
+      labels:
+        component: tcpdumps
+        tier: node
+    spec:
+      #nodeSelector:
+      #  agentpool: default
+      nodeName: $nodeName
+      containers:
+        - command:
+            - nsenter
+            - --target
+            - "1"
+            - --mount
+            - --uts
+            - --ipc
+            - --net
+            - --pid
+            - --
+            - sh
+            - -c
+            - |
+              echo "Getting azcopy binary"
+              curl -L https://aka.ms/downloadazcopy-v10-linux -o /tmp/azcopy.tgz
+              echo "Expand azcopy archive"
+              tar zxvf /tmp/azcopy.tgz -C /tmp
+              cp /tmp/azcopy*/azcopy /tmp
+              echo "Starting Network Capture..."
+              tcpdump -G $capTime -W 1 -w /tmp/$nodeName
+              echo "Uploading results"
+              /tmp/azcopy copy "/tmp/$nodeName" "$SAS"
+              #tar -cvzf /tmp/AKS_backup.tgz /var/log/journal
+              #/tmp/azcopy copy "/tmp/AKS_backup.tgz" "$SAS";
+              sleep 600s
+          image: alpine
+          imagePullPolicy: IfNotPresent
+          name: tcpdump
+          volumeMounts:
+          - mountPath: /tmp
+            name: logs
+          resources:
+            requests:
+              cpu: 10m
+          securityContext:
+            privileged: true
+      volumes:
+      - name: logs
+        hostPath:
+          path: /tmp
+          type: Directory
+      hostPID: true
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+        - effect: NoSchedule
+          operator: Exists
+      restartPolicy: Always
+  updateStrategy:
+    type: OnDelete
+
+EOF
+
+echo "Applying DaemonSet..."
+kubectl apply -f ./tcpdumps.yaml
+#kubectl cp default/tcpdumps-xxxx:/tmp/$nodeName ./$nodeName.pcap
+
+fi
+
+echo "Done..."
