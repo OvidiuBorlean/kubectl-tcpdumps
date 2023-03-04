@@ -11,7 +11,7 @@
 
 ## Usage:
 
-kubectl-plugin <nodeName> <capTime>
+kubectl-plugin nodeName capTime
 
 Where nodeName is the Node where the capture will be executed and capTime is total time of capturing expressed in seconds
 
