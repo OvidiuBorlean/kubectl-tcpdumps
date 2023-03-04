@@ -1,4 +1,4 @@
-# kubectl plugin for tcpdumps
+# kubectl plugin for Network Tracing
 
 
 ## Running tcpdumps inside a Kubernetes Node with this kubectl plugin. 
