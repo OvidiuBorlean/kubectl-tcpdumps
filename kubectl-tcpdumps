@@ -1,3 +1,4 @@
+#tcpdump -vvv src 10.224.0.6 and dst 10.224.0.51
 #!/bin/bash
 
 if [ "$#" -lt 2 ];
