@@ -1,4 +1,6 @@
 #tcpdump -vvv src 10.224.0.6 and dst 10.224.0.51
+#kubectl get pods --selector=component=tcpdumps --output=jsonpath={.items..metadata.name}
+
 #!/bin/bash
 
 if [ "$#" -lt 2 ];
