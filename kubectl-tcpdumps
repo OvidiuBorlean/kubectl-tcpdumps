@@ -1,0 +1,104 @@
+#/bin/bash
+#tcpdump -vvv src 10.224.0.6 and dst 10.224.0.51
+#!/bin/bash
+
+if [ "$#" -lt 2 ];
+then
+  echo "AKS Nodes Network Capture"
+  echo "Invalid number of arguments"
+  echo "Usage: kubectl tcpdumps nodeName captureTime(s)"
+  echo "kubectl-tcpdumps akswin0001 30"
+  exit
+fi
+
+nodeName="$1"
+capTime="$2"
+
+cat << EOF > ./tcpdumps.yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    component: tcpdumps
+  name: tcpdumps
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      component: tcpdumps
+      tier: node
+  template:
+    metadata:
+      labels:
+        component: tcpdumps
+        tier: node
+    spec:
+      nodeSelector:
+        agentpool: $nodeName
+      #nodeName: $nodeName
+      containers:
+        - command:
+            - nsenter
+            - --target
+            - "1"
+            - --mount
+            - --uts
+            - --ipc
+            - --net
+            - --pid
+            - --
+            - sh
+            - -c
+            - |
+              #echo "Getting azcopy binary"
+              #curl -L https://aka.ms/downloadazcopy-v10-linux -o /tmp/azcopy.tgz
+              #echo "Expand azcopy archive"
+              #tar zxvf /tmp/azcopy.tgz -C /tmp
+              #cp /tmp/azcopy*/azcopy /tmp
+              echo "Starting Network Capture..."
+              tcpdump -G $capTime -W 1 -w /tmp/netcapture
+              #echo "Uploading results"
+              #/tmp/azcopy copy "/tmp/$nodeName" "$SAS"
+              #tar -cvzf /tmp/AKS_backup.tgz /var/log/journal
+              #/tmp/azcopy copy "/tmp/AKS_backup.tgz" "$SAS";
+              sleep 60s
+          image: alpine
+          imagePullPolicy: IfNotPresent
+          name: tcpdump
+          volumeMounts:
+          - mountPath: /tmp
+            name: logs
+          resources:
+            requests:
+              cpu: 30m
+          securityContext:
+            privileged: true
+      volumes:
+      - name: logs
+        hostPath:
+          path: /tmp
+          type: Directory
+      hostPID: true
+      tolerations:
+        - effect: NoSchedule
+          operator: Exists
+      restartPolicy: Always
+  updateStrategy:
+    type: OnDelete
+
+EOF
+
+echo "Applying DaemonSet..."
+kubectl apply -f ./tcpdumps.yaml
+#kubectl cp default/tcpdumps-xxxx:/tmp/$nodeName ./$nodeName.pcap
+echo "Waiting for packet capture"
+waitTime=$(echo "$(($capTime + 15))")
+sleep $waitTime
+pods=$(kubectl get pod -l component=tcpdumps)
+for pod in $(kubectl get pods --selector=component=tcpdumps --output=jsonpath={.items..metadata.name});
+do
+  kubectl cp default/$pod:/tmp/netcapture ./$pod.pcap
+done
+
+
+echo "Done..."
